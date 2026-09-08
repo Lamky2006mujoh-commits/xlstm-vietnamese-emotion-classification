@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Vietnamese Emotion Classification with xLSTM
 
 A comparative study of **mLSTM-based xLSTM for Vietnamese social-media emotion classification**, evaluated against LSTM, BiLSTM, CNN, and TF-IDF + Linear SVM baselines.
@@ -269,3 +270,6 @@ Use `scripts/run_complete_study.py` for the current complete experiment. Histori
 - [xLSTM: Extended Long Short-Term Memory](https://arxiv.org/abs/2405.04517)
 - [Official NX-AI xLSTM implementation](https://github.com/NX-AI/xlstm)
 - [Emotion Recognition for Vietnamese Social Media Text](https://arxiv.org/abs/1911.09339)
+=======
+# xlstm-vietnamese-emotion-classification
+>>>>>>> origin/main
