@@ -1,0 +1,14 @@
+# Environment verified on 2026-08-21.
+# Python: 3.11.9
+# GPU: NVIDIA GeForce RTX 4060 Laptop GPU
+# Install torch from the official cu126 index before requirements.txt.
+torch==2.11.0+cu126
+joblib==1.5.3
+matplotlib==3.11.0
+numpy==2.4.6
+pandas==3.0.3
+PyYAML==6.0.3
+scikit-learn==1.9.0
+seaborn==0.13.2
+tqdm==4.68.4
+

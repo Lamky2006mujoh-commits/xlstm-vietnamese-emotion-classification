@@ -1,0 +1,34 @@
+# Validation-only capacity/regularization pilot. Do not evaluate test while tuning.
+task_id: uit_vsmec_7label
+experiment_group: pilot_xlstm_small_v1
+
+data:
+  dataset: UIT-VSMEC
+  raw_dir: data/raw/uit_vsmec
+  preprocessing: light
+  max_len: 80
+  min_token_frequency: 2
+
+training:
+  batch_size: 64
+  epochs: 30
+  patience: 5
+  learning_rate: 0.0005
+  weight_decay: 0.0005
+  gradient_clip_norm: 1.0
+  selection_metric: weighted_f1
+  num_workers: 0
+  seeds: [42]
+
+model:
+  type: xlstm_native
+  backend: native_pytorch_mlstm
+  embedding_dim: 64
+  num_blocks: 1
+  num_heads: 4
+  proj_factor: 2.0
+  qkv_proj_blocksize: 4
+  conv1d_kernel_size: 4
+  pooling: last_valid
+  dropout: 0.5
+

@@ -1,0 +1,27 @@
+task_id: uit_vsmec_7label
+experiment_group: final_v1
+
+data:
+  dataset: UIT-VSMEC
+  raw_dir: data/raw/uit_vsmec
+  preprocessing: light
+  max_len: 80
+  min_token_frequency: 2
+
+training:
+  batch_size: 64
+  epochs: 20
+  patience: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  selection_metric: weighted_f1
+  num_workers: 0
+  seeds: [42, 123, 2026, 7, 999]
+
+model:
+  type: bilstm
+  embedding_dim: 128
+  hidden_dim: 64
+  dropout: 0.3
+

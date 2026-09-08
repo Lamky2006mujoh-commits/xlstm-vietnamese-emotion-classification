@@ -1,0 +1,20 @@
+.venv/
+.venv-xlstm/
+__pycache__/
+*.py[cod]
+
+# The cloned upstream repository is optional reference material. The repaired
+# native backend in src/models.py does not import it.
+xlstm/
+
+data/raw/
+data/processed/
+data/external/
+
+models/
+results/
+
+.ipynb_checkpoints/
+.env
+.DS_Store
+
