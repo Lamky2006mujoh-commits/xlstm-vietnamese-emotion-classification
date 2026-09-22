@@ -1,12 +1,14 @@
 # Vietnamese Emotion Classification with xLSTM
 
-A comparative study of **mLSTM-based xLSTM for Vietnamese social-media emotion classification**, evaluated against LSTM, BiLSTM, CNN, and TF-IDF + Linear SVM baselines.
+A controlled comparison of recurrent, convolutional, native mLSTM/xLSTM, and classical TF-IDF models for seven-label Vietnamese social-media emotion classification on UIT-VSMEC.
 
-The project uses **UIT-VSMEC** and emphasizes reproducible experiments, validation-based model selection, evaluation across multiple random seeds, and transparent reporting of both positive and negative results.
+The repository is designed for reproducible, isolated experiments. It keeps dataset validation, preprocessing, model configuration, training artifacts, predictions, and evaluation metadata together so that results can be checked after training.
 
-## Overview
+> **Status:** The repository contains the experiment code and configuration files. Generated datasets, checkpoints, and results are intentionally excluded from Git. Do not treat historical or locally generated scores as repository results unless the corresponding artifacts are available and verified.
 
-Emotion classification identifies the emotion expressed in a piece of text. This project takes a Vietnamese social-media sentence as input and predicts one of seven labels:
+## Task
+
+Each Vietnamese social-media sentence is assigned one of seven labels:
 
 | Label | Description |
 |---|---|
@@ -18,54 +20,25 @@ Emotion classification identifies the emotion expressed in a piece of text. This
 | Sadness | Sadness or disappointment |
 | Surprise | Surprise or astonishment |
 
-The central research question is:
+The canonical task identifier is `uit_vsmec_7label`.
 
-> How does an mLSTM-only xLSTM classifier compare with conventional recurrent models for Vietnamese emotion classification under a shared data-processing and evaluation framework?
+## Implemented models
 
-This is a focused classification study. It does not train a large language model or claim production readiness.
-
-## Project Scope
-
-The main experiment includes:
-
-- Seven-label emotion classification on the project's local UIT-VSMEC splits.
-- Shared text preprocessing and training-only vocabulary construction.
-- Random, trainable embeddings for all neural models.
-- A bounded hyperparameter search using validation data.
-- Five-seed final evaluation for each neural architecture.
-- Accuracy, macro-F1, weighted-F1, and per-class metrics.
-- Paired error comparisons and bootstrap uncertainty estimates.
-- Parameter counts, training time, inference throughput, and GPU memory measurements.
-- Saved checkpoints, predictions, configurations, and reproducibility metadata.
-
-Pretrained Vietnamese embeddings, the six-label experiment without `Other`, and evaluation on ViGoEmotions are separate extensions outside the completed primary experiment.
-
-## Models
-
-| Model | Implementation |
+| Model/configuration | Implementation |
 |---|---|
-| LSTM | Packed-sequence, unidirectional sentence classifier |
-| BiLSTM | Packed-sequence, bidirectional sentence classifier |
-| CNN | Text CNN with padding-aware pooling |
-| xLSTM | Native PyTorch mLSTM-only classifier with last-valid-token pooling |
-| SVM | Word and character TF-IDF features with Linear SVM |
+| LSTM | PyTorch unidirectional LSTM with packed sequences |
+| BiLSTM | PyTorch bidirectional LSTM with packed sequences |
+| CNN | Masked text CNN with odd-kernel convolutions and padding-aware max pooling |
+| Native xLSTM | Native PyTorch **mLSTM-only** classifier with causal depthwise convolution, stabilized parallel mLSTM memory retrieval, residual blocks, and last-valid-token pooling |
+| TF-IDF + Linear SVM | Word and character-level TF-IDF features combined with scikit-learn `LinearSVC` |
 
-The xLSTM implementation adapts components from the official [NX-AI xLSTM repository](https://github.com/NX-AI/xlstm).
+The native xLSTM implementation is adapted from the [NX-AI xLSTM repository](https://github.com/NX-AI/xlstm). The project deliberately isolates the mLSTM path and does not implement sLSTM, a mixed mLSTM/sLSTM stack, or xLSTM-Large. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-It uses **mLSTM blocks only**. It does not implement sLSTM, a mixed mLSTM/sLSTM stack, or xLSTM-Large. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for attribution.
+The native backend uses ordinary PyTorch tensor operations. It does **not** require the upstream package, Triton, `nvcc`, Conda, or custom CUDA extension compilation.
 
 ## Dataset
 
-The project uses the following local UIT-VSMEC splits:
-
-| Split | Examples |
-|---|---:|
-| Training | 5,548 |
-| Validation | 686 |
-| Test | 693 |
-| **Total** | **6,927** |
-
-Expected layout:
+The code expects local UIT-VSMEC CSV files at:
 
 ```text
 data/raw/uit_vsmec/
@@ -74,195 +47,181 @@ data/raw/uit_vsmec/
 └── test.csv
 ```
 
-Each CSV must contain these columns:
+Every file must contain exactly these columns:
 
 ```text
 Sentence,Emotion
 ```
 
-Raw data is excluded from version control. Obtain the canonical project splits separately before running the experiment.
+The default strict validation contract requires:
 
-The complete-study runner verifies their exact file hashes. Matching the number of rows alone is insufficient; re-exporting a CSV can also change its hash.
+| Split | Rows |
+|---|---:|
+| Training | 5,548 |
+| Validation | 686 |
+| Test | 693 |
+| **Total** | **6,927** |
+
+The validator also checks missing values, the complete seven-label set, duplicate and conflicting texts, split overlaps, and SHA-256 hashes. Raw data is ignored by Git and must be obtained separately from the canonical UIT-VSMEC source.
 
 Dataset reference: [Emotion Recognition for Vietnamese Social Media Text](https://arxiv.org/abs/1911.09339).
 
-## Experimental Protocol
+## Preprocessing and data flow
 
-### Preprocessing
+The default configuration uses `preprocessing: light`:
 
-- Normalize whitespace.
-- Lowercase text and normalize a predefined set of social-media abbreviations.
-- Build the vocabulary from training text only.
-- Retain tokens occurring at least twice in the training split.
-- Limit neural inputs to 80 whitespace-separated tokens.
-- Use 128-dimensional random, trainable embeddings.
+- Collapse repeated whitespace.
+- Lowercase text.
+- Normalize the predefined social-media abbreviations in `src/preprocessing.py`.
+- Build the vocabulary from normalized training text only.
+- Keep tokens occurring at least twice; reserve `<pad>` and `<unk>`.
+- Truncate neural inputs to 80 whitespace-separated tokens.
+- Use 128-dimensional trainable embeddings in the final neural configurations.
+- Pad batches dynamically and preserve sequence lengths for packed-sequence and last-valid-token models.
 
-### Model Selection
+The alternative `raw` preprocessing mode only normalizes whitespace and does not lowercase or expand abbreviations.
 
-Each neural architecture evaluates the same two training presets using validation seeds `42` and `123`.
+## Configuration files
 
-The selected preset maximizes **mean validation weighted-F1**. Ties follow the preset order declared in the study configuration.
+Configurations are YAML files under `configs/`.
 
-The selected configurations are saved before final test evaluation. Learning rate and regularization may differ between selected models, while the search budget and selection procedure remain shared.
+- `final_lstm.yaml`, `final_bilstm.yaml`, and `final_cnn.yaml` are the controlled final neural configurations.
+- `final_classical_svm.yaml` defines the validation-tuned word/character TF-IDF + Linear SVM baseline.
+- `pilot_xlstm_*.yaml` files define native xLSTM pilots.
+- `xlstm.yaml` is a compatibility alias for a rejected two-block validation pilot; it is not a frozen final configuration and must not be used for test evaluation.
+- `smoke_xlstm_native.yaml` is intended for a fast native-backend smoke test.
 
-### Final Evaluation
-
-Each neural model is evaluated using:
-
-```text
-42, 123, 2026, 7, 999
-```
-
-The SVM selects its regularization parameter using validation data and has one final evaluated run.
-
-Reported metrics are reconstructed from saved predictions. The workflow checks dataset identity, prediction-row alignment, stored scores, and completeness of the required model/seed matrix.
-
-## Results
-
-Results below are from the completed local seven-label experiment.
-
-| Model | Mean weighted-F1 | Standard deviation |
-|---|---:|---:|
-| TF-IDF + Linear SVM | 58.79% | — |
-| BiLSTM | 51.52% | 2.01 percentage points |
-| LSTM | 50.61% | 0.54 percentage points |
-| CNN | 50.06% | 1.36 percentage points |
-| mLSTM-only xLSTM | 35.68% | 2.07 percentage points |
-
-Neural results use five seeds. Standard deviations are sample standard deviations across those seeds. SVM seed variability was not estimated.
-
-**The tested xLSTM configuration did not outperform the baselines.** This is a negative result for the evaluated configuration and protocol, not a general conclusion about all xLSTM architectures.
-
-The generated report contains the complete metric tables, per-class results, confusion matrices, paired comparisons, uncertainty estimates, and resource measurements.
+The final neural configs use 20 training epochs, early stopping patience of 4, batch size 64, Adam-style learning-rate/weight-decay settings, gradient clipping at 1.0, and seeds `42, 123, 2026, 7, 999`. Configuration files are the source of truth; inspect them before launching an experiment.
 
 ## Installation
 
-The verified environment uses Python 3.11 and CUDA-enabled PyTorch. The commands below target Windows PowerShell.
+The verified environment uses Python 3.11 and PyTorch 2.11.0 with CUDA 12.6. The commands below target Windows PowerShell.
 
-Create a virtual environment:
+Create a virtual environment and install the matching PyTorch build:
 
 ```powershell
 py -3.11 -m venv .venv-xlstm
-```
-
-Install PyTorch and the project dependencies:
-
-```powershell
+.\.venv-xlstm\Scripts\python.exe -m pip install --upgrade pip
 .\.venv-xlstm\Scripts\python.exe -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126
-
 .\.venv-xlstm\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-The native mLSTM implementation uses standard PyTorch operations and does not require custom CUDA extension compilation.
+For exact pinned versions, see [`requirements-lock.txt`](requirements-lock.txt). The lock file records the environment verified by the project, including Python 3.11.9 and the tested GPU environment.
 
-## Running the Study
-
-Run commands from the project root.
-
-### Complete experiment
+Check the native backend before a full run:
 
 ```powershell
-.\.venv-xlstm\Scripts\python.exe -B scripts\run_complete_study.py --device cuda
+.\.venv-xlstm\Scripts\python.exe -B scripts\check_environment.py
 ```
 
-This command:
-
-1. Runs validation-only selection.
-2. Saves the selected configurations.
-3. Runs all five final neural seeds.
-4. Trains and evaluates the validation-tuned SVM.
-5. Reconstructs metrics and generates the results report.
-
-### Resume an interrupted study
+Use `--strict-gpu` when CUDA is required:
 
 ```powershell
-.\.venv-xlstm\Scripts\python.exe -B scripts\run_complete_study.py --device cuda --resume
+.\.venv-xlstm\Scripts\python.exe -B scripts\check_environment.py --strict-gpu
 ```
 
-Completed runs are verified before reuse. Existing evidence is preserved. Changes to the protocol, source, dataset, or recorded environment require a new output directory.
+## Running experiments
 
-### Rebuild the report without training
+Run commands from the repository root. Each run writes to a new directory and refuses to overwrite non-empty output directories.
+
+### Neural models
+
+Train one configured model using all seeds declared in its YAML file:
 
 ```powershell
-.\.venv-xlstm\Scripts\python.exe -B scripts\run_complete_study.py --device cuda --analysis-only
+.\.venv-xlstm\Scripts\python.exe -B scripts\train.py --config configs\final_lstm.yaml --device cuda --evaluate-test
+.\.venv-xlstm\Scripts\python.exe -B scripts\train.py --config configs\final_bilstm.yaml --device cuda --evaluate-test
+.\.venv-xlstm\Scripts\python.exe -B scripts\train.py --config configs\final_cnn.yaml --device cuda --evaluate-test
 ```
 
-Use the same recorded study environment.
+The `--evaluate-test` flag is intentional: it evaluates the already-inspected test split only after the configuration has been frozen. Omit it for validation-only runs.
 
-### Run a workflow smoke test
+Run the native xLSTM pilot without performing a test evaluation:
 
 ```powershell
-.\.venv-xlstm\Scripts\python.exe -B scripts\run_complete_study.py --device cuda --smoke
+.\.venv-xlstm\Scripts\python.exe -B scripts\train.py --config configs\pilot_xlstm_1block_128.yaml --device cuda
 ```
 
-Smoke-test outputs are stored separately and must not be reported as research results.
+A single seed or an alternate output location can be supplied explicitly:
 
-## Outputs
-
-The default full-study output directory is:
-
-```text
-results/uit_vsmec_complete_v1/
+```powershell
+.\.venv-xlstm\Scripts\python.exe -B scripts\train.py \
+  --config configs\final_lstm.yaml \
+  --seeds 42 \
+  --device cuda \
+  --output-root results\lstm_seed42
 ```
 
-Open this file in a browser:
+On Windows PowerShell, use one line or PowerShell's backtick continuation character instead of the Unix `\` continuation shown above.
 
-```text
-results/uit_vsmec_complete_v1/research_report.html
+### Classical baseline
+
+The SVM script fits each candidate `C` value on the training split, selects the best value by validation weighted-F1, saves validation predictions, and optionally evaluates the test split:
+
+```powershell
+.\.venv-xlstm\Scripts\python.exe -B scripts\train_classical.py --config configs\final_classical_svm.yaml --evaluate-test
 ```
 
-Key outputs include:
+The default search is `C ∈ {0.25, 0.5, 1.0, 2.0, 4.0}`, with word n-grams from 1–3 and character-within-word n-grams from 1–7.
 
-| File | Contents |
-|---|---|
-| `research_report.html` | Complete research report |
-| `stability_summary.csv` | Aggregate metrics and resource measurements |
-| `aggregate_runs.csv` | Results for individual final runs |
-| `selection_scores.csv` | Validation-only selection results |
-| `per_class_summary.csv` | Mean per-class metrics |
-| `confusion_by_seed.csv` | Confusion counts for individual runs |
-| `paired_errors.csv` | Paired correctness comparisons |
-| `paired_bootstrap.csv` | Conditional bootstrap intervals |
-| `research_summary.json` | Machine-readable conclusion |
-| `study_protocol.json` | Protocol and reproducibility metadata |
-| `selected_configs/` | Configurations selected before test evaluation |
+### Data validation
 
-Individual run directories also contain checkpoints, prediction files, metrics, and integrity checksums.
+Validate the local dataset independently:
 
-Results are ignored by Git by default. Include selected result artifacts explicitly when sharing the project.
+```powershell
+.\.venv-xlstm\Scripts\python.exe -B scripts\validate_data.py
+```
+
+## Outputs and reproducibility
+
+By default, runs are written below `results/<experiment_group>/`. Each run contains artifacts such as:
+
+- `checkpoint_best.pt` for neural models or `checkpoint_best.joblib` for SVM.
+- `config_resolved.yaml`.
+- `dataset_manifest.json`, including split hashes and integrity checks.
+- `environment.json`.
+- Training history and validation metrics.
+- Prediction CSV files.
+- `run_manifest.json`, including model identity, seed, parameter count, timing, and test-evaluation status.
+
+Summarize completed test-evaluated runs and reconstruct metrics from prediction files:
+
+```powershell
+.\.venv-xlstm\Scripts\python.exe -B scripts\summarize_runs.py --experiment-dir results\final_v1
+```
+
+The summarizer rejects incomplete runs, wrong task IDs, duplicate model/seed pairs, incorrect test-row counts, and mismatches between stored and reconstructed metrics. Results are ignored by Git; share them explicitly if they are needed for review.
 
 ## Tests
+
+Run the unit-test suite with:
 
 ```powershell
 .\.venv-xlstm\Scripts\python.exe -B -m unittest discover -s tests -v
 ```
 
-Tests cover preprocessing, vocabulary construction, model behavior, metric reconstruction, validation-only selection, bootstrap calculations, and rejection of inconsistent evidence.
+The tests cover preprocessing, vocabulary construction, dataset contracts, model forward/backward behavior, sequence-length handling, metric reconstruction, and experiment artifact validation.
 
-## Repository Structure
+## Repository structure
 
 ```text
-configs/       Model configurations and complete-study settings
-src/           Data processing, models, training, and analysis
-scripts/       Experiment entry points
+configs/       YAML model and experiment configurations
+src/           Data contracts, preprocessing, models, training, and evaluation
+scripts/       Training, validation, environment, and summarization entry points
 tests/         Automated tests
 data/          Local datasets; excluded from Git
-results/       Generated experiments and reports; excluded from Git
-notebooks/     Earlier exploratory and baseline experiments
-references/    Research reference material
+results/       Generated run artifacts; excluded from Git
+references/    Research reference material, when present
 ```
 
-Use `scripts/run_complete_study.py` for the current complete experiment. Historical notebook results belong to their original experimental protocols.
+## Limitations and interpretation
 
-## Limitations
-
-- The local split's per-class counts differ from the published UIT-VSMEC benchmark, so published scores are not directly comparable.
-- The test set was inspected during earlier project development. The current protocol prevents new test-driven selection but cannot undo that history.
-- The dataset contains duplicates, one training-label conflict, and a train-validation text overlap.
-- The hyperparameter search is deliberately limited, and model parameter counts are not identical.
-- Bootstrap intervals are exploratory and conditional on the observed training seeds. They do not include hyperparameter-selection uncertainty.
-- Only a one-block, mLSTM-only xLSTM configuration is evaluated in the completed study.
-- The neural models use random embeddings rather than pretrained Vietnamese representations.
+- Scores depend on the exact local split and preprocessing configuration; do not compare them with published UIT-VSMEC scores without matching the protocol.
+- The test split may have been inspected during project development. The code supports configuration freeze before test evaluation but cannot undo prior inspection.
+- The dataset can contain duplicate texts, label conflicts, and cross-split text overlap; these are reported by the manifest rather than silently removed.
+- The xLSTM implementation is a native, mLSTM-only sentence classifier, not a reproduction of every xLSTM architecture or the official package runtime.
+- Neural models use randomly initialized trainable embeddings; pretrained Vietnamese embeddings are not part of the controlled implementation.
+- Pilot configurations and smoke-test outputs must not be presented as final benchmark results.
 
 ## References
 
